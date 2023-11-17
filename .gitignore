@@ -132,3 +132,4 @@ dist
 
 # User files
 styles.min.css
+.temp/
