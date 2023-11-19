@@ -1,104 +1,150 @@
-// content of index.js
-const express = require('express');
-const app = express();
-const port = 3000;
+import { Router } from 'itty-router';
+import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
+import { parse, serialize } from 'cookie';
+import manifestJSON from '__STATIC_CONTENT_MANIFEST';
+const assetManifest = JSON.parse(manifestJSON);
 
-const wrap =
-  (fn) =>
-  (...args) =>
-    fn(...args).catch(args[2]);
-
-const fs = require('fs/promises');
-
-const stopsJsonUrl =
-  'https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4dc2-a171-a23eec8f2172/resource/4c4025f0-01bf-41f7-a39f-d156d201b82b/download/stops.json';
+const cookieName = 'observed_stops';
 
 function getDeparturesJsonUrl(stopId) {
   return `https://ckan2.multimediagdansk.pl/departures?stopId=${stopId}`;
 }
 
-let stopsDict = {};
-let stopsByIdDict = {};
-let observedStops = [];
+function createJsonResponse(data) {
+  return new Response(JSON.stringify(data), {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+}
 
-app.get(
-  '/stops/:query',
-  wrap(async (req, res, next) => {
-    const query = req.params.query.toLowerCase();
-    if (query.length < 3) {
-      res.json([]);
+async function getOrCreateCachedTimetable(env, stopId) {
+  let data = JSON.parse(await env.TIMETABLE.get(stopId.toString()));
+  if (!data || Date.now() - data.createdOn > 10_000) {
+    const departures = [];
+    const response = await (await fetch(getDeparturesJsonUrl(stopId))).json();
+    for (const d of response.departures) {
+      departures.push(
+        `${d.routeId} ${d.headsign} ${new Date(d.estimatedTime).toLocaleTimeString('pl-pl')}`
+      );
     }
 
-    const list = stopsDict[query.substring(0, 3)];
-    if (!list) {
-      res.json([]);
-    }
+    data = {
+      createdOn: Date.now(),
+      departures: departures,
+    };
 
-    res.json(
-      list
-        .filter((x) => x.nameLowerCase.startsWith(query))
-        .map((x) => {
-          return {
-            id: x.id,
-            name: x.name,
-          };
-        }),
-    );
-  }),
-);
-
-app.get(
-  '/observing',
-  wrap(async (req, res, next) => {
-    console.log('get observed');
-    const stops = [];
-    for (const stopId of observedStops) {
-      const stopDeps = [];
-      const response = await (await fetch(getDeparturesJsonUrl(stopId))).json();
-      for (const d of response.departures) {
-        stopDeps.push(`${d.routeId} ${d.headsign} ${new Date(d.estimatedTime).toLocaleTimeString('pl-pl')}`);
-      }
-      stops.push({ name: stopsByIdDict[stopId], departures: stopDeps });
-    }
-
-    res.json(stops);
-  }),
-);
-
-app.put(
-  '/observing/:id',
-  wrap(async (req, res, next) => {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-      res.status(400).send('Bad Request');
-    }
-
-    if (!observedStops.includes(id)) {
-      observedStops.push(id);
-    }
-
-    console.log('add observed stop', id);
-    console.log('currently observing:', observedStops);
-    res.end();
-  }),
-);
-
-app.listen(port, async () => {
-  const stopsJson = await fs.readFile('temp/stops.json', { encoding: 'utf8' });
-  stopsResponse = JSON.parse(stopsJson);
-  const dateKey = new Date().toLocaleDateString('en-ca');
-  for (let stop of stopsResponse[dateKey].stops) {
-    if (!stop.stopName) {
-      continue;
-    }
-    const key = stop.stopName.substring(0, 3).toLowerCase();
-    if (!stopsDict[key]) {
-      stopsDict[key] = [];
-    }
-    const name = stop.subName ? `${stop.stopName} ${stop.subName}` : stop.stopName;
-    stopsDict[key].push({ id: stop.stopId, name: name, nameLowerCase: name.toLowerCase() });
-    stopsByIdDict[stop.stopId] = name;
+    await env.TIMETABLE.put(stopId, JSON.stringify(data));
   }
 
-  console.log(`Example app listening on port ${port}`);
+  return data.departures;
+}
+
+// Create a new router
+const router = Router();
+
+// Timetable routes
+router.get('/stops/:query', async ({ params }, env) => {
+  let query = decodeURIComponent(params.query).toLowerCase();
+  if (query.length < 3) {
+    return createJsonResponse([]);
+  }
+
+  const listJson = await env.STOPS.get(query.substring(0, 3));
+  if (!listJson) {
+    return createJsonResponse([]);
+  }
+
+  const list = JSON.parse(listJson);
+  if (!list) {
+    return createJsonResponse([]);
+  }
+
+  const response = list
+    .filter(x => x.nameLowerCase.startsWith(query))
+    .map(x => {
+      return {
+        id: x.id,
+        name: x.name,
+      };
+    });
+
+  return createJsonResponse(response);
 });
+
+router.get('/observing', async ({ headers }, env) => {
+  const cookie = parse(headers.get('Cookie') || '');
+  if (!cookie || !cookie[cookieName]) {
+    return createJsonResponse([]);
+  }
+
+  const observedStops = cookie[cookieName].split(',');
+  console.log('observed stops: ', observedStops);
+  const stops = [];
+
+  for (const stopId of observedStops) {
+    if (isNaN(Number(stopId))) {
+      continue;
+    }
+    const stopName = await env.STOP_NAMES.get(stopId.toString());
+    const departures = await getOrCreateCachedTimetable(env, stopId);
+    stops.push({ name: stopName ?? stopId.toString(), departures: departures });
+  }
+
+  return createJsonResponse(stops);
+});
+
+router.put('/observing/:id', async ({ params, headers }) => {
+  const cookie = parse(headers.get('Cookie') || '');
+  let observedStops = [];
+  if (cookie && cookie[cookieName]) {
+    observedStops = cookie[cookieName].split(',');
+  }
+
+  const id = Number(params.id);
+  if (isNaN(id)) {
+    return new Response('', {
+      status: 400,
+      statusText: 'Bad request',
+    });
+  }
+
+  if (!observedStops.includes(id)) {
+    observedStops.push(id);
+  }
+
+  var response = new Response('');
+  response.headers.set('Set-Cookie', serialize(cookieName, observedStops.join(',')));
+  return response;
+});
+
+router.all('*', () => new Response('404, not found!', { status: 404 }));
+
+export default {
+  async fetch(request, env, ctx) {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === '/' || requestUrl.pathname.includes('static')) {
+      try {
+        // Add logic to decide whether to serve an asset or run your original Worker code
+        return await getAssetFromKV(
+          {
+            request,
+            waitUntil: ctx.waitUntil.bind(ctx),
+          },
+          {
+            ASSET_NAMESPACE: env.__STATIC_CONTENT,
+            ASSET_MANIFEST: assetManifest,
+          }
+        );
+      } catch (e) {
+        let pathname = new URL(requestUrl).pathname;
+        return new Response(`"${pathname}" not found`, {
+          status: 404,
+          statusText: 'not found',
+        });
+      }
+    } else {
+      return await router.handle(request, env, ctx);
+    }
+  },
+};

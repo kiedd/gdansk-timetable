@@ -1,0 +1,12 @@
+name = "gdansk-timetable"
+main = "src/index.js"
+compatibility_date = "2022-05-03"
+
+kv_namespaces = [
+  { binding = "STOP_NAMES", id = "05519d832b0446b8b6523bc1ca91b25d" },
+  { binding = "STOPS", id = "8053a59d3d9e43cc98a539023805fb59" },
+  { binding = "TIMETABLE", id = "ec3779341e144364a67575fa55b30f1f" },
+]
+
+[site]
+bucket = "./public"  # Path to your static files

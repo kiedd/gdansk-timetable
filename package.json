@@ -1,15 +1,25 @@
 {
   "scripts": {
-    "dev": "concurrently 'postcss tailwind.css -o src/styles.min.css --watch'  'live-server --watch=./src/ --open=./src/index.html --proxy=/api:http://localhost:3000' 'node --watch ./src/index.js'"
+    "deploy": "wrangler deploy",
+    "dev": "concurrently 'postcss tailwind.css -o public/static/styles.min.css --watch' 'wrangler dev'",
+    "test": "vitest",
+    "init-stops-kv:local": "wrangler kv:bulk put ./.temp/stops.json --binding STOPS --local",
+    "init-stopnames-kv:local": "wrangler kv:bulk put ./.temp/stopsById.json --binding STOP_NAMES --local",
+    "init-stops-kv:prod": "wrangler kv:bulk put ./.temp/stops.json --binding STOPS"
+  },
+  "dependencies": {
+    "cookie": "^0.6.0",
+    "itty-router": "^2.6.1"
   },
   "devDependencies": {
+    "@cloudflare/kv-asset-handler": "^0.3.0",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
     "daisyui": "^4.3.1",
-    "express": "^4.18.2",
-    "live-server": "^1.2.2",
+    "eslint": "^8.54.0",
     "postcss-cli": "^10.1.0",
     "prettier": "3.1.0",
-    "tailwindcss": "^3.3.5"
+    "tailwindcss": "^3.3.5",
+    "wrangler": "^3.16.0"
   }
 }
