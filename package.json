@@ -1,11 +1,11 @@
 {
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "postcss tailwind.css -o public/static/styles.min.css && wrangler deploy",
     "dev": "concurrently 'postcss tailwind.css -o public/static/styles.min.css --watch' 'wrangler dev'",
     "test": "vitest",
     "init-stops-kv:local": "wrangler kv:bulk put ./.temp/stops.json --binding STOPS --local",
-    "init-stopnames-kv:local": "wrangler kv:bulk put ./.temp/stopsById.json --binding STOP_NAMES --local",
-    "init-stops-kv:prod": "wrangler kv:bulk put ./.temp/stops.json --binding STOPS"
+    "init-stops-kv:prod": "wrangler kv:bulk put ./.temp/stops.json --binding STOPS",
+    "init-stopnames-kv:local": "wrangler kv:bulk put ./.temp/stopsById.json --binding STOP_NAMES --local"
   },
   "dependencies": {
     "cookie": "^0.6.0",
