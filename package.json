@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "build": "postcss tailwind.css -o public/static/styles.min.css",
     "deploy": "postcss tailwind.css -o public/static/styles.min.css && wrangler deploy",
     "dev": "concurrently 'postcss tailwind.css -o public/static/styles.min.css --watch' 'wrangler dev'",
     "test": "vitest",
