@@ -14,7 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: bahmutov/npm-install@v1
+      - name: NPM ci
+        run: npm ci
       - name: NPM build
         run: npm run build
       - name: Deploy
