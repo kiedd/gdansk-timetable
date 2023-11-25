@@ -25,7 +25,7 @@ async function getOrCreateCachedTimetable(env, stopId) {
     const response = await (await fetch(getDeparturesJsonUrl(stopId))).json();
     for (const d of response.departures) {
       departures.push(
-        `${d.routeId} ${d.headsign} ${new Date(d.estimatedTime).toLocaleTimeString('pl-pl')}`
+        `${d.routeId} ${d.headsign} ${new Date(d.estimatedTime).toLocaleTimeString('pl-pl', { timeZone: 'Europe/Warsaw' })}`
       );
     }
 
